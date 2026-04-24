@@ -39,7 +39,7 @@ from asyncio_throttle import Throttler
 
 from storage.blob_client import upload_blob, read_blob
 from crawler.redis_manager import RedisManager, redis_manager, QUEUE_PENDING, QUEUE_PROCESSING
-from crawler.fetcher import smart_fetch
+from crawler.fetcher import fetch_with_playwright, smart_fetch
 from crawler.auth_fetch import authenticated_fetch
 from crawler.cleaner import clean_html, extract_links_from_html, is_document_url
 from crawler.ai_extractor import extract_tenders_with_ai, is_tender_page
@@ -424,12 +424,27 @@ async def process_url(task: dict, shared_rm: RedisManager, worker_id: str):
 
         clean_text = clean_html(fetch_result.html, base_url=url)
 
+        tender_candidate = await is_tender_page(clean_text or "", url)
+
+        # If the URL strongly looks like a tender page but httpx returned a JS skeleton
+        # (cleaned text is tiny), retry once with Playwright to get rendered content.
+        if (
+            tender_candidate
+            and (not clean_text or len(clean_text) < 80)
+            and use_pw
+            and fetch_result.method == "httpx"
+        ):
+            await srm.push_log("INFO", f"[{worker_id}] Low text â€” retry Playwright: {url}", url)
+            pw_result = await fetch_with_playwright(url, timeout=25000)
+            if pw_result.success and pw_result.html:
+                fetch_result = pw_result
+                clean_text = clean_html(fetch_result.html, base_url=url)
+                tender_candidate = await is_tender_page(clean_text or "", url)
+
         if clean_text and len(clean_text) >= 80:
-            if await is_tender_page(clean_text, url):
+            if tender_candidate:
                 await srm.push_log("INFO", f"[{worker_id}] TENDER PAGE: {url}", url)
-                tenders = await extract_tenders_with_ai(
-                    clean_text, url, fetch_result.fetched_at
-                )
+                tenders = await extract_tenders_with_ai(clean_text, url, fetch_result.fetched_at)
                 if tenders:
                     for t in tenders:
                         await srm.save_result(t)

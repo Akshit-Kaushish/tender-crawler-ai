@@ -33,15 +33,30 @@ import os
 import re
 import time
 from openai import AsyncOpenAI
+import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential
 from loguru import logger
 
-client = AsyncOpenAI(
-    api_key=os.getenv("OPENAI_API_KEY"),
-    base_url=os.getenv("OPENAI_BASE_URL"),
-)
+_OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+_OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL")
+
+# Some Azure AI Foundry/OpenAI gateways expose a dedicated `/responses` endpoint.
+# If the user provides OPENAI_BASE_URL ending with `/responses`, keep that as the
+# responses endpoint and trim it for the OpenAI SDK (which appends its own paths).
+_base = (_OPENAI_BASE_URL or "").rstrip("/")
+_RESPONSES_URL = None
+_SDK_BASE_URL = _OPENAI_BASE_URL
+if _base.endswith("/responses"):
+    _RESPONSES_URL = _base
+    _SDK_BASE_URL = _base[: -len("/responses")]
+
+# Optional explicit override (preferred when using a Responses-only gateway).
+_RESPONSES_URL = os.getenv("OPENAI_RESPONSES_URL") or _RESPONSES_URL
+
+client = AsyncOpenAI(api_key=_OPENAI_API_KEY, base_url=_SDK_BASE_URL)
 MODEL      = os.getenv("OPENAI_MODEL",      "gpt-4.1")
-MODEL_MINI = os.getenv("OPENAI_MODEL", "gpt-4.1")
+# Support both legacy and documented env var names.
+MODEL_MINI = os.getenv("OPENAI_MODEL_MINI", os.getenv("OPENAI_MODEL_mini", "gpt-4.1-nano"))
 
 # ── AI Semaphore ──────────────────────────────────────────────────────────────
 # Derived from WORKER_CONCURRENCY (same env var, no new config needed).
@@ -182,7 +197,7 @@ _TENDER_URL_SEGMENTS = {
     "contract", "contracts", "opportunity", "opportunities", "notice",
     "nit", "eoi", "expressions-of-interest",
     # French
-    "appels-offres", "appel-offres", "marches", "marche", "soumissions",
+    "appels-offres", "appel-offres", "appels-doffres", "appel-doffres", "marches", "marche", "soumissions",
     "avis-marche", "consultation", "avis",
     # Spanish
     "licitaciones", "licitacion", "concurso", "convocatoria", "contratacion",
@@ -429,16 +444,51 @@ async def _mini_classify(text_sample: str, url: str) -> bool:
     sem = _get_ai_semaphore()
     async with sem:
         try:
-            response = await client.chat.completions.create(
-                model=MODEL_MINI,
-                messages=[
-                    {"role": "system", "content": CLASSIFIER_PROMPT},
-                    {"role": "user",   "content": f"URL: {url}\n\nPAGE SAMPLE:\n{text_sample[:2000]}"},
-                ],
-                temperature=0,
-                max_tokens=5,
-            )
-            answer = (response.choices[0].message.content or "").strip().lower()
+            prompt = f"{CLASSIFIER_PROMPT}\n\nURL: {url}\n\nPAGE SAMPLE:\n{text_sample[:2000]}"
+
+            if _RESPONSES_URL:
+                async with httpx.AsyncClient(timeout=20) as hc:
+                    resp = await hc.post(
+                        _RESPONSES_URL,
+                        headers={
+                            "Content-Type": "application/json",
+                            "Authorization": f"Bearer {_OPENAI_API_KEY}",
+                            "api-key": _OPENAI_API_KEY or "",
+                        },
+                        json={
+                            "model": MODEL_MINI,
+                            "input": prompt,
+                            "temperature": 0,
+                            "max_output_tokens": 5,
+                        },
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+
+                answer = None
+                if isinstance(data, dict):
+                    answer = data.get("output_text") or data.get("text")
+                    if not answer:
+                        for item in data.get("output", []) or []:
+                            for c in item.get("content", []) or []:
+                                if isinstance(c, dict) and c.get("type") in ("output_text", "text"):
+                                    answer = c.get("text")
+                                    break
+                            if answer:
+                                break
+                answer = (answer or "").strip().lower()
+            else:
+                response = await client.chat.completions.create(
+                    model=MODEL_MINI,
+                    messages=[
+                        {"role": "system", "content": CLASSIFIER_PROMPT},
+                        {"role": "user", "content": f"URL: {url}\n\nPAGE SAMPLE:\n{text_sample[:2000]}"},
+                    ],
+                    temperature=0,
+                    max_tokens=5,
+                )
+                answer = (response.choices[0].message.content or "").strip().lower()
+
             return answer.startswith("yes")
         except Exception as e:
             logger.warning(f"Mini classifier failed for {url}: {e} — defaulting to True")
@@ -463,29 +513,51 @@ async def is_tender_page(page_text: str, url: str) -> bool:
               layouts, obfuscated text, pages where tender content is below
               the fold, etc.
     """
-    if not page_text or len(page_text.strip()) < 80:
-        return False
+    url_lower = (url or "").lower()
+    if any(signal in url_lower for signal in _TENDER_SIGNALS):
+        return True
 
     # ── Tier 1: keyword scan ─────────────────────────────────────────────────
     text_lower = page_text.lower()
     if any(signal in text_lower for signal in _TENDER_SIGNALS):
         return True
-    # Also check URL itself — e.g. aispo.org/en/tenders/ has keyword in URL
-    url_lower = url.lower()
-    if any(signal in url_lower for signal in _TENDER_SIGNALS):
-        return True
-
     # ── Tier 2: URL path segment check ──────────────────────────────────────
-    from urllib.parse import urlparse
+    from urllib.parse import unquote, urlparse
     import re
-    parsed = urlparse(url.lower())
-    # Split path into individual segments (handles hyphens, slashes, dots)
-    path_parts = set(re.split(r'[/\-_.?&= ]', parsed.path))
+    parsed = urlparse(url_lower)
+
+    # Preserve full path segments (including hyphens) and also add tokenized variants.
+    # This avoids missing URLs like "/appels-doffres/" where naive splitting turns it
+    # into {"appels","doffres"}.
+    path = unquote(parsed.path or "").lower()
+    raw_segments = [seg for seg in path.split("/") if seg]
+
+    path_parts: set[str] = set()
+    for seg in raw_segments:
+        seg = seg.strip()
+        if not seg:
+            continue
+
+        path_parts.add(seg)
+
+        seg_no_apos = seg.replace("'", "").replace("’", "")
+        if seg_no_apos:
+            path_parts.add(seg_no_apos)
+
+        tokens = [t for t in re.split(r"[\-_.?&= ]+", seg_no_apos) if t]
+        path_parts.update(tokens)
+        if len(tokens) > 1:
+            path_parts.add("-".join(tokens))
+            path_parts.add("".join(tokens))
+
     path_parts = {p for p in path_parts if len(p) > 2}
     if path_parts & _TENDER_URL_SEGMENTS:
         return True
 
     # ── Tier 3: mini AI classifier ───────────────────────────────────────────
+    if not page_text or len(page_text.strip()) < 80:
+        return False
+
     result = await _mini_classify(page_text, url)
     if result:
         logger.debug(f"Mini classifier: TENDER → {url}")

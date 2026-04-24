@@ -224,20 +224,34 @@ class RedisManager:
         Count pending tasks belonging to THIS session only.
         Returns the global count when no session prefix is set (admin view).
         Samples up to 2000 tasks to avoid blocking Redis on large queues.
+
+        IMPORTANT: do NOT use zrange(0..N) for sampling here because the queue
+        is a priority zset. If other sessions have higher-priority tasks, a
+        zrange sample can miss this session entirely and incorrectly show 0.
         """
         if not self.session_prefix:
             return await self.get_queue_size()
         raw_session_id = self.session_prefix.rstrip(":")[2:]  # strip "s:"
         r = await self.client()
         try:
-            tasks = await r.zrange(QUEUE_PENDING, 0, 1999)
+            cursor = 0
             count = 0
-            for t in tasks:
-                try:
-                    if json.loads(t).get("session_id") == raw_session_id:
-                        count += 1
-                except Exception:
-                    pass
+            scanned = 0
+            # zscan iterates without priority bias (unlike zrange), giving
+            # a more representative sample under multi-session load.
+            while True:
+                cursor, items = await r.zscan(QUEUE_PENDING, cursor=cursor, count=500)
+                for task_str, _score in items:
+                    scanned += 1
+                    try:
+                        if json.loads(task_str).get("session_id") == raw_session_id:
+                            count += 1
+                    except Exception:
+                        pass
+                    if scanned >= 2000:
+                        return count
+                if cursor == 0:
+                    break
             return count
         except Exception:
             return 0
@@ -321,6 +335,70 @@ class RedisManager:
         """Signal THIS session's workers to stop — does NOT affect other sessions."""
         await self.set_crawl_state("stopped")
         logger.info(f"Stop signal sent [{self.session_prefix or 'global'}]")
+
+    async def purge_session_tasks(self):
+        """
+        Remove ONLY this session's tasks from the shared queues.
+
+        This is used by the Stop endpoint to make the crawl halt quickly:
+        - Removes pending tasks from the shared zset
+        - Removes in-flight tasks from the shared processing hash
+        - Clears this session's enqueued set so UI no longer shows "pending"
+
+        It intentionally does NOT delete results/logs/stats.
+        """
+        if not self.session_prefix:
+            return
+
+        r = await self.client()
+        raw_session_id = self.session_prefix.rstrip(":")[2:]  # strip "s:" prefix
+
+        # 1) Pending zset: scan and remove matching task blobs
+        try:
+            cursor = 0
+            to_remove: list[str] = []
+            while True:
+                cursor, items = await r.zscan(QUEUE_PENDING, cursor=cursor, count=500)
+                for task_str, _score in items:
+                    try:
+                        if json.loads(task_str).get("session_id") == raw_session_id:
+                            to_remove.append(task_str)
+                    except Exception:
+                        pass
+
+                    if len(to_remove) >= 200:
+                        await r.zrem(QUEUE_PENDING, *to_remove)
+                        to_remove.clear()
+
+                if cursor == 0:
+                    break
+
+            if to_remove:
+                await r.zrem(QUEUE_PENDING, *to_remove)
+        except Exception as e:
+            logger.warning(f"[purge:{raw_session_id}] Pending purge failed: {e}")
+
+        # 2) Processing hash: scan and delete matching URLs
+        try:
+            cursor = 0
+            while True:
+                cursor, kv = await r.hscan(QUEUE_PROCESSING, cursor=cursor, count=200)
+                for url, task_str in (kv or {}).items():
+                    try:
+                        if json.loads(task_str).get("session_id") == raw_session_id:
+                            await r.hdel(QUEUE_PROCESSING, url)
+                    except Exception:
+                        pass
+                if cursor == 0:
+                    break
+        except Exception as e:
+            logger.warning(f"[purge:{raw_session_id}] Processing purge failed: {e}")
+
+        # 3) Session enqueued set: clear (do not wipe other session keys)
+        try:
+            await r.delete(self._sk(SET_ENQUEUED))
+        except Exception:
+            pass
 
     # ─────────────────────────────────────────────────────────────────────────
     # Worker status — SESSION-scoped

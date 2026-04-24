@@ -25,6 +25,7 @@ CHANGES:
      needed when the queue is near capacity.
 """
 import re
+import os
 from bs4 import BeautifulSoup, Comment
 from urllib.parse import urljoin, urlparse, parse_qs, urlencode, urlunparse
 
@@ -71,7 +72,7 @@ _PAGINATION_RE = re.compile(
 
 # rel="next" or class containing "next"/"pagination" on an <a> tag
 _NEXT_CLASS_RE = re.compile(r'\bnext\b|\bpagination\b|\bnextpage\b', re.IGNORECASE)
-MAX_FOLLOW_LINKS = 40
+MAX_FOLLOW_LINKS = int(os.getenv("MAX_FOLLOW_LINKS", "120"))
 
 _TENDER_HINTS = {
     "tender", "tenders", "bid", "bids", "rfp", "rfq", "procurement",
@@ -230,10 +231,12 @@ def extract_links_from_html(raw_html: str, base_url: str) -> list[str]:
         if len(parsed.path.strip("/").split("/")) <= 1:
             score -= 1
 
-        # Allow score=0 links if they have "see more/view all/load more" anchor text
+        # Historically we dropped score<=0 links, which often killed crawling on portals
+        # where anchor text is generic or non-English. Keep only negative-score links
+        # filtered out (self-links, extremely shallow paths), and allow score==0.
         _see_more = {"see more", "view all", "load more", "show more", "more tenders",
                      "voir plus", "ver más", "ver tudo", "mehr anzeigen", "tutti", "all tenders"}
-        if score <= 0 and not any(t in anchor_text for t in _see_more):
+        if score < 0 and not any(t in anchor_text for t in _see_more):
             continue
 
         previous = scored_links.get(clean)

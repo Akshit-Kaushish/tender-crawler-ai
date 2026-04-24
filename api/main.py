@@ -292,6 +292,12 @@ async def spawn_session_workers(session_id: str, n: int, config: dict):
                 cids.append(cid)
         _session_containers[session_id] = cids
         logger.info(f"[spawn] {len(cids)}/{n} Docker workers started for session={session_id}")
+        if len(cids) == 0:
+            # Docker CLI might be available but `docker run` can still fail
+            # (permissions, missing image, wrong network, etc). Fall back so
+            # the crawl doesn't "hang" with a pending queue and no consumer.
+            logger.warning("[spawn] Docker spawn failed — using in-process workers")
+            await _spawn_inprocess_workers(session_id, n)
     else:
         logger.warning("[spawn] Docker unavailable — using in-process workers")
         await _spawn_inprocess_workers(session_id, n)
@@ -553,10 +559,13 @@ async def stop_crawl(x_session_id: Optional[str] = Header(default=None)):
     rm = get_rm(session_id)
     # Signal session workers via SESSION-scoped ctrl key
     await rm.stop_crawlers()
+    # Drop this session's queued/in-flight tasks so the crawl halts quickly.
+    await rm.purge_session_tasks()
     await rm.end_session()
     await rm.push_log("INFO", "Crawl stopped by user")
-    # Kill containers belonging to this session
-    _kill_session_containers(session_id)
+    # Kill containers belonging to this session (don't block the event loop).
+    loop = asyncio.get_running_loop()
+    loop.run_in_executor(None, _kill_session_containers, session_id)
     _kill_inprocess_workers(session_id)
     return {"status": "stopped"}
 
