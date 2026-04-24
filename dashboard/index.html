@@ -1,0 +1,972 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TenderCrawler Control Center</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+  :root{
+    --bg:#f3efe6;
+    --bg2:#f9f6f0;
+    --ink:#12212f;
+    --muted:#5e6a73;
+    --line:rgba(18,33,47,.12);
+    --panel:rgba(255,255,255,.74);
+    --panel-strong:#fffdfa;
+    --brand:#0d9488;
+    --brand-2:#f97316;
+    --ok:#15803d;
+    --warn:#b45309;
+    --bad:#b91c1c;
+    --shadow:0 20px 60px rgba(18,33,47,.08);
+    --radius:24px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    min-height:100vh;
+    font-family:'Manrope',sans-serif;
+    color:var(--ink);
+    background:
+      radial-gradient(circle at top left, rgba(13,148,136,.18), transparent 28%),
+      radial-gradient(circle at top right, rgba(249,115,22,.18), transparent 24%),
+      linear-gradient(180deg, var(--bg2), var(--bg));
+  }
+  .shell{max-width:1480px;margin:0 auto;padding:24px}
+  .hero{
+    display:grid;
+    grid-template-columns:1.35fr .85fr;
+    gap:18px;
+    margin-bottom:18px;
+  }
+  @media(max-width:900px){.hero{grid-template-columns:1fr}}
+  @media(max-width:900px){.grid{grid-template-columns:1fr}}
+  .hero-card,.hero-side,.panel{
+    background:var(--panel);
+    backdrop-filter:blur(16px);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    box-shadow:var(--shadow);
+  }
+  .hero-card{padding:30px;position:relative;overflow:hidden}
+  .hero-card:before{
+    content:"";
+    position:absolute;inset:auto -30px -30px auto;width:180px;height:180px;
+    background:radial-gradient(circle, rgba(13,148,136,.20), transparent 65%);
+    pointer-events:none;
+  }
+  .eyebrow,.panel-title,.field label,.tiny{
+    font-family:'IBM Plex Mono',monospace;
+    letter-spacing:.08em;
+    text-transform:uppercase;
+    font-size:.75rem;
+  }
+  .eyebrow{color:var(--brand)}
+  h1{margin:10px 0 12px;font-size:clamp(2rem,4vw,3.8rem);line-height:.96}
+  .hero-copy{max-width:760px;color:var(--muted);font-size:1rem;line-height:1.7}
+  .hero-metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:22px}
+  .metric{
+    background:rgba(255,255,255,.7);
+    border:1px solid var(--line);
+    border-radius:20px;
+    padding:16px;
+  }
+  .metric strong{display:block;font-size:1.7rem}
+  .metric span{color:var(--muted);font-size:.9rem}
+  .hero-side{padding:22px;display:flex;flex-direction:column;gap:16px}
+  .status-row{display:flex;justify-content:space-between;align-items:center;gap:12px}
+  .status-pill,.chip{
+    display:inline-flex;align-items:center;gap:10px;
+    border-radius:999px;border:1px solid var(--line);
+    background:rgba(255,255,255,.65);padding:10px 14px;
+    font-family:'IBM Plex Mono',monospace;font-size:.78rem;
+  }
+  .dot{width:10px;height:10px;border-radius:50%;background:#94a3b8;box-shadow:0 0 0 0 transparent}
+  .dot.running{background:var(--brand);box-shadow:0 0 0 6px rgba(13,148,136,.15)}
+  .dot.paused{background:#f59e0b;box-shadow:0 0 0 6px rgba(245,158,11,.15)}
+  .dot.done{background:var(--ok)}
+  .grid{
+    display:grid;
+    grid-template-columns:minmax(0,1.25fr) minmax(360px,.75fr);
+    gap:18px;
+  }
+  .stack{display:grid;gap:18px}
+  .panel{padding:22px}
+  .panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:18px}
+  .panel-title{color:var(--muted)}
+  .panel h2{margin:6px 0 0;font-size:1.35rem}
+  .field{display:grid;gap:8px}
+  textarea,input,select{
+    width:100%;border:1px solid var(--line);border-radius:18px;
+    padding:14px 16px;background:rgba(255,255,255,.9);color:var(--ink);
+    font:inherit;outline:none;transition:border-color .2s ease, transform .2s ease;
+  }
+  textarea{min-height:170px;resize:vertical}
+  textarea:focus,input:focus,select:focus{border-color:rgba(13,148,136,.55);transform:translateY(-1px)}
+  .config-grid,.source-grid,.stats-grid,.results-grid{
+    display:grid;gap:12px;
+  }
+  .config-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .source-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .stats-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+  @media(max-width:700px){.stats-grid{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:420px){.stats-grid{grid-template-columns:1fr}}
+  .monitor-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--line);font-size:.92rem}
+  .monitor-row:last-child{border-bottom:none}
+  .monitor-label{color:var(--muted);font-family:'IBM Plex Mono',monospace;font-size:.78rem;text-transform:uppercase}
+  .monitor-val{font-weight:700;font-family:'IBM Plex Mono',monospace}
+  .monitor-badge{display:inline-block;padding:3px 10px;border-radius:999px;font-size:.75rem;font-weight:700}
+  .badge-ok{background:#dcfce7;color:var(--ok)}
+  .badge-warn{background:#fff3dd;color:var(--warn)}
+  .badge-err{background:#fee2e2;color:var(--bad)}
+  .latency-bar-wrap{width:90px;height:6px;background:rgba(0,0,0,.08);border-radius:4px;overflow:hidden}
+  .latency-bar{height:100%;border-radius:4px;transition:width .4s ease,background .4s ease}
+  .stat{
+    padding:16px;border-radius:20px;background:rgba(255,255,255,.78);
+    border:1px solid var(--line);
+  }
+  .stat strong{display:block;font-size:1.7rem}
+  .stat span{display:block;margin-top:4px;color:var(--muted);font-size:.9rem}
+  .actions{display:flex;flex-wrap:wrap;gap:12px}
+  button{
+    border:none;border-radius:999px;padding:13px 18px;
+    font:700 .95rem 'Manrope',sans-serif;cursor:pointer;
+    transition:transform .18s ease, filter .18s ease, opacity .18s ease;
+  }
+  button:hover:not(:disabled){transform:translateY(-1px);filter:brightness(1.03)}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  .btn-primary{background:linear-gradient(135deg,var(--brand),#14b8a6);color:white}
+  .btn-secondary{background:rgba(255,255,255,.78);border:1px solid var(--line);color:var(--ink)}
+  .btn-warn{background:#fff3dd;color:var(--warn);border:1px solid rgba(180,83,9,.18)}
+  .btn-danger{background:#fee2e2;color:var(--bad);border:1px solid rgba(185,28,28,.16)}
+  .btn-ok{background:#dcfce7;color:var(--ok);border:1px solid rgba(21,128,61,.15)}
+  .hint{font-size:.9rem;color:var(--muted);line-height:1.6}
+  .banner{
+    display:flex;flex-wrap:wrap;gap:10px;margin-top:14px
+  }
+  .banner .chip strong{font-size:.78rem}
+  .log-box{
+    min-height:420px;max-height:560px;overflow:auto;padding-right:6px
+  }
+  .log-entry{
+    display:grid;grid-template-columns:90px 72px 1fr;gap:10px;
+    padding:11px 0;border-bottom:1px solid rgba(18,33,47,.08);
+    font-family:'IBM Plex Mono',monospace;font-size:.78rem;
+  }
+  .log-entry .level.INFO{color:#0369a1}
+  .log-entry .level.SUCCESS{color:var(--ok)}
+  .log-entry .level.WARN{color:var(--warn)}
+  .log-entry .level.ERROR{color:var(--bad)}
+  .empty{
+    display:grid;place-items:center;min-height:220px;text-align:center;
+    color:var(--muted);border:1px dashed rgba(18,33,47,.14);border-radius:20px;
+    background:rgba(255,255,255,.45);padding:20px
+  }
+  .table-wrap{overflow:auto;border:1px solid var(--line);border-radius:20px}
+  table{width:100%;border-collapse:collapse;background:rgba(255,255,255,.78)}
+  th,td{padding:14px;border-bottom:1px solid rgba(18,33,47,.08);text-align:left;vertical-align:top}
+  th{font-size:.8rem;color:var(--muted);font-family:'IBM Plex Mono',monospace;text-transform:uppercase}
+  td{font-size:.93rem}
+  .source-list{display:grid;gap:10px}
+  .source-item{
+    padding:14px;border:1px solid var(--line);border-radius:18px;background:rgba(255,255,255,.76);
+    display:flex;justify-content:space-between;gap:12px;align-items:flex-start
+  }
+  .source-item h3{margin:0 0 6px;font-size:1rem}
+  .source-item p{margin:0;color:var(--muted);font-size:.88rem;line-height:1.5}
+  .toast{
+    position:fixed;right:20px;bottom:20px;z-index:30;
+    background:#10212f;color:white;padding:14px 18px;border-radius:16px;
+    box-shadow:var(--shadow);opacity:0;transform:translateY(10px);
+    transition:all .22s ease;pointer-events:none
+  }
+  .toast.show{opacity:1;transform:translateY(0)}
+  .toast.ok{background:#14532d}
+  .toast.err{background:#7f1d1d}
+  .pill-ok{color:var(--ok)}
+  .pill-warn{color:var(--warn)}
+
+  /* ── Completion banner ──────────────────────────────────────────────── */
+  .done-banner{
+    display:none;
+    margin-bottom:18px;
+    background:linear-gradient(135deg,#dcfce7,#d1fae5);
+    border:1.5px solid rgba(21,128,61,.28);
+    border-radius:var(--radius);
+    padding:22px 28px;
+    box-shadow:0 4px 24px rgba(21,128,61,.10);
+    animation:fadeIn .4s ease;
+  }
+  .done-banner.visible{display:block}
+  .done-banner-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+  .done-banner h2{margin:0 0 6px;color:#14532d;font-size:1.35rem}
+  .done-banner .eyebrow{color:#16a34a}
+  .done-banner-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
+  .done-banner .disclaimer{
+    margin-top:12px;padding:12px 16px;
+    background:rgba(180,83,9,.07);border:1px solid rgba(180,83,9,.18);
+    border-radius:14px;font-size:.88rem;color:var(--warn);line-height:1.6
+  }
+  .done-banner .disclaimer strong{display:block;margin-bottom:2px}
+  .done-dismiss{
+    background:none;border:none;cursor:pointer;color:#16a34a;
+    font-size:1.3rem;padding:4px 8px;border-radius:8px;line-height:1;
+    transition:background .15s;
+  }
+  .done-dismiss:hover{background:rgba(21,128,61,.10)}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
+  /* session badge */
+  .session-badge{
+    display:inline-flex;align-items:center;gap:8px;
+    background:rgba(255,255,255,.85);border:1px solid var(--line);
+    border-radius:999px;padding:6px 14px;
+    font-family:'IBM Plex Mono',monospace;font-size:.78rem;color:var(--ink);
+    margin-bottom:14px;box-shadow:0 2px 8px rgba(18,33,47,.06);
+  }
+  .session-badge .sid-label{color:var(--muted);font-size:.72rem}
+  .session-badge .sid-value{color:var(--brand);font-weight:600;letter-spacing:.04em}
+  @media (max-width:1120px){
+    .hero,.grid{grid-template-columns:1fr}
+  }
+  @media (max-width:760px){
+    .shell{padding:14px}
+    .config-grid,.source-grid,.stats-grid,.hero-metrics{grid-template-columns:1fr}
+    .panel{padding:18px}
+    .log-entry{grid-template-columns:1fr}
+    .status-row{align-items:flex-start;flex-direction:column}
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+<div class="session-badge" id="session-badge"><span class="sid-label">SESSION</span><span class="sid-value" id="session-id-display">…</span></div>
+
+<div class="done-banner" id="done-banner">
+  <div class="done-banner-head">
+    <div>
+      <div class="eyebrow">✓ Crawl Complete</div>
+      <h2>All workers finished — your results are ready</h2>
+    </div>
+    <button class="done-dismiss" onclick="dismissDoneBanner()" title="Dismiss">✕</button>
+  </div>
+  <div class="done-banner-actions">
+    <button class="btn-ok" onclick="downloadFile('results')">⬇ Download Tenders (.jsonl)</button>
+    <button class="btn-secondary" onclick="downloadFile('failed')">⬇ Download Failed Links</button>
+  </div>
+  <div class="disclaimer">
+    <strong>⚠ AI Accuracy Disclaimer</strong>
+    Results are extracted by an AI model and may contain errors, omissions, or hallucinations.
+    Always verify tender details — including deadlines, values, and contact information — against the original source before acting on them.
+  </div>
+</div>
+
+  <section class="hero">
+    <div class="hero-card">
+      <div class="eyebrow">TenderCrawler Control Center</div>
+      <h1>Protected tender crawling, session reuse, and fast scoped discovery.</h1>
+      <p class="hero-copy">
+        Start from one or many URLs, automatically reuse any active authenticated session for a matching source,
+        and only follow procurement-relevant paths so workers and AI spend time where the tenders actually are.
+      </p>
+      <div class="hero-metrics">
+        <div class="metric"><strong id="hero-urls">0</strong><span>Input URLs</span></div>
+        <div class="metric"><strong id="hero-results">0</strong><span>Tenders Captured</span></div>
+        <div class="metric"><strong id="hero-failed">0</strong><span>Failed Links</span></div>
+      </div>
+    </div>
+    <aside class="hero-side">
+      <div class="status-row">
+        <div>
+          <div class="panel-title">Crawler Status</div>
+          <h2 id="status-text">Idle</h2>
+        </div>
+        <div class="status-pill"><span class="dot" id="status-dot"></span><span id="status-meta">Waiting for a run</span></div>
+      </div>
+      <div class="hint" id="resolve-summary">
+        Add a URL below and I’ll tell you whether a matching protected source already has a live session.
+      </div>
+      <div class="banner" id="source-match-banner"></div>
+    </aside>
+  </section>
+
+  <section class="grid">
+    <div class="stack">
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title">Run Crawl</div>
+            <h2>Seed focused tender discovery</h2>
+          </div>
+          <div class="tiny" id="url-count">0 URLs detected</div>
+        </div>
+        <div class="field">
+          <label for="urls">Target URLs</label>
+          <textarea id="urls" placeholder="https://portal.example.gov/tenders&#10;https://agency.example.org/procurement"></textarea>
+        </div>
+        <div class="config-grid" style="margin-top:14px">
+          <div class="field"><label for="max-depth">Max depth</label><input id="max-depth" type="number" min="1" max="6" value="3"></div>
+          <div class="field"><label for="max-workers">Workers</label><input id="max-workers" type="number" min="1" max="30" value="8"></div>
+          <div class="field"><label for="domain-delay">Domain delay</label><input id="domain-delay" type="number" min="0" max="5" step="0.1" value="0.3"></div>
+          <div class="field"><label for="use-pw">Rendering mode</label>
+            <select id="use-pw">
+              <option value="true">Hybrid: httpx + Playwright</option>
+              <option value="false">HTTP only</option>
+            </select>
+          </div>
+        </div>
+        <div class="actions" style="margin-top:18px">
+          <button class="btn-primary" id="btn-start" onclick="startCrawl()">Start Crawl</button>
+          <button class="btn-warn" id="btn-pause" onclick="pauseCrawl()" disabled>Pause</button>
+          <button class="btn-ok" id="btn-resume" onclick="resumeCrawl()" disabled>Resume</button>
+          <button class="btn-secondary" id="btn-stop" onclick="stopCrawl()" disabled>Stop</button>
+          <button class="btn-danger" onclick="resetCrawl()">Reset Data</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title">Operational Stats</div>
+            <h2>Live queue and extraction picture</h2>
+          </div>
+          <div class="actions">
+            <button class="btn-secondary" id="download-results" onclick="downloadFile('results')" disabled>Download Tenders</button>
+            <button class="btn-secondary" id="download-failed" onclick="downloadFile('failed')" disabled>Download Failed</button>
+          </div>
+        </div>
+        <div class="stats-grid">
+          <div class="stat"><strong id="s-pending">0</strong><span>Pending queue</span></div>
+          <div class="stat"><strong id="s-processing">0</strong><span>Processing</span></div>
+          <div class="stat"><strong id="s-visited">0</strong><span>Visited</span></div>
+          <div class="stat"><strong id="s-pages">0</strong><span>Pages fetched</span></div>
+          <div class="stat"><strong id="s-tenders">0</strong><span>Tenders extracted</span></div>
+          <div class="stat"><strong id="s-failed">0</strong><span>Failed links</span></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title">Results Preview</div>
+            <h2>Latest tenders</h2>
+          </div>
+          <button class="btn-secondary" onclick="loadResults()">Refresh Results</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Title</th><th>Deadline</th><th>Organization</th><th>Source</th></tr>
+            </thead>
+            <tbody id="results-body">
+              <tr><td colspan="4"><div class="empty">No tenders yet.</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="stack">
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title">Protected Source Vault</div>
+            <h2>Register a login-backed source</h2>
+          </div>
+          <button class="btn-secondary" onclick="loadSources()">Refresh Sources</button>
+        </div>
+        <div class="source-grid">
+          <div class="field"><label for="source-name">Source name</label><input id="source-name" placeholder="UN Procurement Portal"></div>
+          <div class="field"><label for="source-base-url">Base URL</label><input id="source-base-url" placeholder="https://portal.example.gov/tenders"></div>
+          <div class="field"><label for="source-method">Auth method</label>
+            <select id="source-method" onchange="toggleSourceFields()">
+              <option value="form_login">Form login</option>
+              <option value="token_login">Token login</option>
+              <option value="basic_auth">Basic auth</option>
+              <option value="cookie_inject">Cookie inject</option>
+            </select>
+          </div>
+          <div class="field"><label for="source-login-url">Login URL</label><input id="source-login-url" placeholder="https://portal.example.gov/login"></div>
+          <div class="field method-user"><label for="source-username">Username</label><input id="source-username" autocomplete="off"></div>
+          <div class="field method-user"><label for="source-password">Password</label><input id="source-password" type="password" autocomplete="new-password"></div>
+          <div class="field method-form"><label for="source-user-selector">Username selector</label><input id="source-user-selector" value="#username"></div>
+          <div class="field method-form"><label for="source-pass-selector">Password selector</label><input id="source-pass-selector" value="#password"></div>
+          <div class="field method-form"><label for="source-submit-selector">Submit selector</label><input id="source-submit-selector" value="button[type=submit]"></div>
+          <div class="field method-form"><label for="source-success-fragment">Success URL fragment</label><input id="source-success-fragment" placeholder="dashboard"></div>
+          <div class="field method-token"><label for="source-token-field">Token field</label><input id="source-token-field" value="access_token"></div>
+          <div class="field method-cookie"><label for="source-cookie-string">Cookie string</label><input id="source-cookie-string" placeholder="sessionid=...; csrftoken=..."></div>
+          <div class="field"><label for="source-session-ttl">Session TTL (seconds)</label><input id="source-session-ttl" type="number" value="3600" min="60"></div>
+          <div class="field"><label for="source-notes">Notes</label><input id="source-notes" placeholder="Optional private note"></div>
+        </div>
+        <div class="actions" style="margin-top:18px">
+          <button class="btn-primary" onclick="saveSource()">Save To Key Vault</button>
+        </div>
+        <p class="hint">Credentials are sent to the backend for secure Key Vault storage. The crawler only keeps live sessions in Redis while they are active.</p>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title">Known Sources</div>
+            <h2>Session-aware source routing</h2>
+          </div>
+        </div>
+        <div class="source-list" id="sources-list">
+          <div class="empty">No protected sources saved yet.</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title">API &amp; Redis Monitor</div>
+            <h2>Endpoint health &amp; latency</h2>
+          </div>
+          <button class="btn-secondary" onclick="checkHealth()">Refresh</button>
+        </div>
+        <div id="monitor-body">
+          <div class="monitor-row">
+            <span class="monitor-label">Status</span>
+            <span class="monitor-badge badge-ok" id="mon-status">—</span>
+          </div>
+          <div class="monitor-row">
+            <span class="monitor-label">Endpoint</span>
+            <span class="monitor-val" id="mon-host" style="font-size:.8rem;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">—</span>
+          </div>
+          <div class="monitor-row">
+            <span class="monitor-label">Connection</span>
+            <span class="monitor-badge" id="mon-type">—</span>
+          </div>
+          <div class="monitor-row">
+            <span class="monitor-label">Latency (p50)</span>
+            <div style="display:flex;align-items:center;gap:10px">
+              <span class="monitor-val" id="mon-latency">—</span>
+              <div class="latency-bar-wrap"><div class="latency-bar" id="mon-lat-bar" style="width:0%;background:var(--brand)"></div></div>
+            </div>
+          </div>
+          <div class="monitor-row">
+            <span class="monitor-label">Active sessions</span>
+            <span class="monitor-val" id="mon-sessions">—</span>
+          </div>
+          <div class="monitor-row">
+            <span class="monitor-label">Global queue</span>
+            <span class="monitor-val" id="mon-gqueue">—</span>
+          </div>
+          <div class="monitor-row" id="mon-warn-row" style="display:none">
+            <span class="monitor-label">Advisory</span>
+            <span class="monitor-badge badge-warn" id="mon-warn-msg"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title">Live Logs</div>
+            <h2>Worker and extraction stream</h2>
+          </div>
+          <div class="actions">
+            <button class="btn-secondary" onclick="toggleAutoScroll()" id="auto-scroll-btn">Auto-scroll: on</button>
+            <button class="btn-secondary" onclick="clearLogs()">Clear</button>
+          </div>
+        </div>
+        <div class="log-box" id="log-box">
+          <div class="empty">Logs will appear here once a session starts.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── Session isolation ────────────────────────────────────────────────────────
+// Each browser tab generates a unique sessionId so multiple users share one
+// API without mixing their crawl data.  The ID is kept in sessionStorage so
+// refreshing the same tab reuses the same session.
+let SESSION_ID = sessionStorage.getItem("tc_session_id");
+if (!SESSION_ID) {
+  SESSION_ID = "tc-" + Math.random().toString(36).slice(2, 10);
+  sessionStorage.setItem("tc_session_id", SESSION_ID);
+}
+
+// Attach session header to every fetch automatically.
+const _origFetch = window.fetch.bind(window);
+window.fetch = (url, opts = {}) => {
+  if (typeof url === "string" && url.startsWith("/api")) {
+    opts.headers = { ...(opts.headers || {}), "X-Session-ID": SESSION_ID };
+    // Also append ?session_id for SSE/download URLs that can't use headers easily
+    if (url.includes("/stream") || url.includes("/download")) {
+      const sep = url.includes("?") ? "&" : "?";
+      url = url + sep + "session_id=" + encodeURIComponent(SESSION_ID);
+    }
+  }
+  return _origFetch(url, opts);
+};
+
+let sse = null;
+let statsTimer = null;
+let autoScroll = true;
+let running = false;
+
+function esc(value) {
+  return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function parseUrls() {
+  return document.getElementById("urls").value
+    .split(/[\n,]+/)
+    .map(item => item.trim())
+    .filter(Boolean);
+}
+
+function updateUrlCount() {
+  const count = parseUrls().length;
+  document.getElementById("url-count").textContent = `${count} URL${count === 1 ? "" : "s"} detected`;
+  document.getElementById("hero-urls").textContent = count;
+  if (count === 1) {
+    resolveSource(parseUrls()[0]);
+  } else {
+    renderSourceMatch(null);
+  }
+}
+
+async function resolveSource(url) {
+  if (!url) return renderSourceMatch(null);
+  try {
+    const response = await fetch(`/api/sources/resolve?url=${encodeURIComponent(url)}`);
+    const data = await response.json();
+    renderSourceMatch(data);
+  } catch {
+    renderSourceMatch(null);
+  }
+}
+
+function renderSourceMatch(data) {
+  const banner = document.getElementById("source-match-banner");
+  const summary = document.getElementById("resolve-summary");
+  banner.innerHTML = "";
+  if (!data) {
+    summary.textContent = "Add a URL below and I’ll tell you whether a matching protected source already has a live session.";
+    return;
+  }
+  if (!data.matched) {
+    summary.textContent = "No protected source matched this URL yet. The crawler can still run unauthenticated, or you can register this source below.";
+    banner.innerHTML = `<div class="chip"><strong>No source match</strong></div>`;
+    return;
+  }
+  summary.textContent = data.has_active_session
+    ? `Matched "${data.source.name}" and found a live ${data.session_method || "authenticated"} session.`
+    : `Matched "${data.source.name}" but no active session is cached yet. The crawler will log in from Key Vault on demand.`;
+  banner.innerHTML = `
+    <div class="chip"><strong>${esc(data.source.name)}</strong></div>
+    <div class="chip ${data.has_active_session ? "pill-ok" : "pill-warn"}"><strong>${data.has_active_session ? "Live session ready" : "Login required on first fetch"}</strong></div>
+  `;
+}
+
+async function startCrawl() {
+  const urls = parseUrls();
+  if (!urls.length) return toast("Add at least one URL first.", "err");
+  const body = {
+    urls,
+    max_depth: Number(document.getElementById("max-depth").value),
+    max_workers: Number(document.getElementById("max-workers").value),
+    domain_delay: Number(document.getElementById("domain-delay").value),
+    use_playwright: document.getElementById("use-pw").value === "true",
+    session_name: `Session-${Date.now()}`
+  };
+  try {
+    const response = await fetch("/api/crawl", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body)
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "Unable to start crawl");
+    toast(`Started crawl for ${urls.length} URL${urls.length === 1 ? "" : "s"}.`);
+    setRunning(true);
+    startSSE();
+    startStats();
+  } catch (error) {
+    toast(error.message, "err");
+  }
+}
+
+async function pauseCrawl() { await simplePost("/api/pause", "Crawl paused."); }
+async function resumeCrawl() { await simplePost("/api/resume", "Crawl resumed."); }
+
+async function stopCrawl() {
+  if (!confirm("Stop the current crawl? Extracted data will stay available.")) return;
+  await simplePost("/api/stop", "Crawl stopped.");
+}
+
+async function resetCrawl() {
+  if (!confirm("Reset all crawl state and saved outputs? This cannot be undone.")) return;
+  try {
+    const response = await fetch("/api/reset", {method: "DELETE"});
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "Reset failed");
+    clearLogs();
+    setRunning(false);
+    updateStats({});
+    renderResults([]);
+    toast("All crawl data cleared.");
+  } catch (error) {
+    toast(error.message, "err");
+  }
+}
+
+async function simplePost(url, successMessage) {
+  try {
+    const response = await fetch(url, {method: "POST"});
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "Request failed");
+    toast(successMessage);
+    startStats();
+  } catch (error) {
+    toast(error.message, "err");
+  }
+}
+
+function startSSE() {
+  if (sse) sse.close();
+  sse = new EventSource(`/api/logs/stream?session_id=${encodeURIComponent(SESSION_ID)}`);
+  sse.onmessage = (event) => {
+    try {
+      const payload = JSON.parse(event.data);
+      if (payload.type === "heartbeat") return;
+      addLog(payload);
+    } catch {}
+  };
+}
+
+function addLog(entry) {
+  const box = document.getElementById("log-box");
+  if (box.querySelector(".empty")) box.innerHTML = "";
+  const ts = new Date((entry.ts || Date.now() / 1000) * 1000).toLocaleTimeString();
+  const row = document.createElement("div");
+  row.className = "log-entry";
+  row.innerHTML = `<div>${esc(ts)}</div><div class="level ${esc(entry.level)}">${esc(entry.level)}</div><div>${esc(entry.msg)}</div>`;
+  box.appendChild(row);
+  while (box.children.length > 1200) box.removeChild(box.firstChild);
+  if (autoScroll) box.scrollTop = box.scrollHeight;
+}
+
+function clearLogs() {
+  document.getElementById("log-box").innerHTML = `<div class="empty">Logs will appear here once a session starts.</div>`;
+}
+
+function toggleAutoScroll() {
+  autoScroll = !autoScroll;
+  document.getElementById("auto-scroll-btn").textContent = `Auto-scroll: ${autoScroll ? "on" : "off"}`;
+}
+
+function startStats() {
+  if (statsTimer) clearInterval(statsTimer);
+  pollStatus();
+  statsTimer = setInterval(pollStatus, 2000);
+  checkHealth();   // initial health check on crawl start
+}
+
+async function pollStatus() {
+  try {
+    const response = await fetch("/api/status");
+    const data = await response.json();
+    updateStats(data.stats || {});
+    updateStatusState(data);
+    await Promise.all([loadResults(false), loadSources(false)]);
+  } catch {}
+}
+
+function updateStats(stats) {
+  const tenders = Number(stats.tenders_extracted ?? stats.total_extracted ?? 0);
+  const failed = Number(stats.total_failed ?? 0);
+  document.getElementById("s-pending").textContent = Number(stats.queue_pending ?? 0);
+  document.getElementById("s-processing").textContent = Number(stats.queue_processing ?? 0);
+  document.getElementById("s-visited").textContent = Number(stats.total_visited ?? 0);
+  document.getElementById("s-pages").textContent = Number(stats.pages_fetched ?? 0);
+  document.getElementById("s-tenders").textContent = tenders;
+  document.getElementById("s-failed").textContent = failed;
+  document.getElementById("hero-results").textContent = tenders;
+  document.getElementById("hero-failed").textContent = failed;
+  document.getElementById("download-results").disabled = tenders <= 0;
+  document.getElementById("download-failed").disabled = failed <= 0;
+}
+
+function updateStatusState(payload) {
+  const session = payload.session || {};
+  const crawlState = payload.crawl_state || "running";
+  const allWorkersDone = Boolean(payload.all_workers_done);
+  const isDone = session.status === "done" || allWorkersDone;
+  const isPaused = crawlState === "paused";
+  const isStopped = crawlState === "stopped";
+  const isRunning = !isDone && !isPaused && !isStopped && session.status === "running";
+
+  // Update session badge from server response (confirms the server sees the same id)
+  if (payload.session_id) {
+    document.getElementById("session-id-display").textContent = payload.session_id;
+  }
+
+  const dot = document.getElementById("status-dot");
+  const text = document.getElementById("status-text");
+  const meta = document.getElementById("status-meta");
+  dot.className = "dot";
+
+  if (isDone) {
+    dot.classList.add("done");
+    text.textContent = "Done";
+    meta.textContent = "Workers completed and queue is empty";
+    setRunning(false);
+    if (payload.crawl_complete) showDoneBanner();
+  } else if (isPaused) {
+    dot.classList.add("paused");
+    text.textContent = "Paused";
+    meta.textContent = "Queue is preserved and ready to continue";
+    setRunning(true, true);
+  } else if (isRunning) {
+    dot.classList.add("running");
+    text.textContent = "Crawling";
+    const crawlId = session.id ? ` · crawl ${session.id}` : "";
+    meta.textContent = `Workers fetching & extracting${crawlId}`;
+    setRunning(true);
+  } else if (isStopped) {
+    text.textContent = "Stopped";
+    meta.textContent = "Crawler stopped by user";
+    setRunning(false);
+  } else {
+    text.textContent = "Idle";
+    meta.textContent = "Waiting for a run";
+    setRunning(false);
+  }
+}
+
+function setRunning(active, paused = false) {
+  running = active;
+  document.getElementById("btn-start").disabled = active && !paused;
+  document.getElementById("btn-pause").disabled = !active || paused;
+  document.getElementById("btn-resume").disabled = !paused;
+  document.getElementById("btn-stop").disabled = !active;
+}
+
+async function loadResults(showToast = false) {
+  try {
+    const response = await fetch("/api/results?page=1&page_size=8");
+    const data = await response.json();
+    renderResults(data.tenders || []);
+    if (showToast) toast("Results refreshed.");
+  } catch (error) {
+    if (showToast) toast("Unable to load results.", "err");
+  }
+}
+
+function renderResults(items) {
+  const body = document.getElementById("results-body");
+  if (!items.length) {
+    body.innerHTML = `<tr><td colspan="4"><div class="empty">No tenders yet.</div></td></tr>`;
+    return;
+  }
+  body.innerHTML = items.map(item => `
+    <tr>
+      <td>${esc(item.title || "Untitled")}</td>
+      <td>${esc(item.deadline || "-")}</td>
+      <td>${esc(item.organization || "-")}</td>
+      <td><a href="${esc(item.source_url || "#")}" target="_blank" rel="noreferrer">${esc(item.source_url || "-")}</a></td>
+    </tr>
+  `).join("");
+}
+
+function toggleSourceFields() {
+  const method = document.getElementById("source-method").value;
+  document.querySelectorAll(".method-form").forEach(el => el.style.display = method === "form_login" ? "" : "none");
+  document.querySelectorAll(".method-token").forEach(el => el.style.display = method === "token_login" ? "" : "none");
+  document.querySelectorAll(".method-cookie").forEach(el => el.style.display = method === "cookie_inject" ? "" : "none");
+  document.querySelectorAll(".method-user").forEach(el => el.style.display = method === "cookie_inject" ? "none" : "");
+}
+
+async function saveSource() {
+  const payload = {
+    name: document.getElementById("source-name").value.trim(),
+    base_url: document.getElementById("source-base-url").value.trim(),
+    method: document.getElementById("source-method").value,
+    login_url: document.getElementById("source-login-url").value.trim(),
+    username: document.getElementById("source-username").value.trim(),
+    password: document.getElementById("source-password").value,
+    username_selector: document.getElementById("source-user-selector").value.trim(),
+    password_selector: document.getElementById("source-pass-selector").value.trim(),
+    submit_selector: document.getElementById("source-submit-selector").value.trim(),
+    success_url_fragment: document.getElementById("source-success-fragment").value.trim(),
+    token_field: document.getElementById("source-token-field").value.trim(),
+    cookie_string: document.getElementById("source-cookie-string").value.trim(),
+    session_ttl: Number(document.getElementById("source-session-ttl").value || 3600),
+    notes: document.getElementById("source-notes").value.trim()
+  };
+  if (!payload.name || !payload.base_url) return toast("Source name and base URL are required.", "err");
+  try {
+    const response = await fetch("/api/sources", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(payload)
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "Unable to save source");
+    toast(`Saved protected source "${payload.name}".`);
+    document.getElementById("source-password").value = "";
+    document.getElementById("source-cookie-string").value = "";
+    await loadSources();
+    const baseUrl = document.getElementById("source-base-url").value.trim();
+    if (baseUrl) await resolveSource(baseUrl);
+  } catch (error) {
+    toast(error.message, "err");
+  }
+}
+
+async function loadSources(showToast = false) {
+  try {
+    const response = await fetch("/api/sources");
+    const data = await response.json();
+    renderSources(data.sources || []);
+    if (showToast) toast("Sources refreshed.");
+  } catch {
+    if (showToast) toast("Unable to load sources.", "err");
+  }
+}
+
+function renderSources(items) {
+  const list = document.getElementById("sources-list");
+  if (!items.length) {
+    list.innerHTML = `<div class="empty">No protected sources saved yet.</div>`;
+    return;
+  }
+  list.innerHTML = items.map(source => `
+    <div class="source-item">
+      <div>
+        <h3>${esc(source.name)}</h3>
+        <p>${esc(source.base_url)}</p>
+        <p>${esc(source.method)} | auth id: ${esc(source.auth_id)}</p>
+      </div>
+      <div class="chip ${source.has_active_session ? "pill-ok" : "pill-warn"}">
+        <strong>${source.has_active_session ? "Session active" : "No active session"}</strong>
+      </div>
+    </div>
+  `).join("");
+}
+
+async function downloadFile(type) {
+  const endpoint = (type === "results" ? "/api/download/results" : "/api/download/failed") + `?session_id=${encodeURIComponent(SESSION_ID)}`;
+  try {
+    const response = await fetch(endpoint);
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.detail || "Nothing to download");
+    }
+    const blob = await response.blob();
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = type === "results" ? `tenders_${Date.now()}.jsonl` : `failed_${Date.now()}.jsonl`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast("Download started.");
+  } catch (error) {
+    toast(error.message, "err");
+  }
+}
+
+function showDoneBanner() {
+  const b = document.getElementById("done-banner");
+  if (!b.classList.contains("visible")) b.classList.add("visible");
+  // Update download buttons enabled state immediately
+  const stats = {
+    tenders_extracted: Number(document.getElementById("s-tenders").textContent || 0),
+    total_failed:      Number(document.getElementById("s-failed").textContent  || 0),
+  };
+  document.getElementById("download-results").disabled = stats.tenders_extracted <= 0;
+  document.getElementById("download-failed").disabled  = stats.total_failed    <= 0;
+}
+
+function dismissDoneBanner() {
+  document.getElementById("done-banner").classList.remove("visible");
+}
+
+
+function toast(message, type = "ok") {
+  const el = document.getElementById("toast");
+  el.textContent = message;
+  el.className = `toast show ${type}`;
+  setTimeout(() => { el.className = `toast ${type}`; }, 2800);
+}
+
+
+async function checkHealth() {
+  try {
+    const r = await fetch("/api/health/detailed");
+    const d = await r.json();
+
+    const statusEl  = document.getElementById("mon-status");
+    const hostEl    = document.getElementById("mon-host");
+    const typeEl    = document.getElementById("mon-type");
+    const latEl     = document.getElementById("mon-latency");
+    const barEl     = document.getElementById("mon-lat-bar");
+    const sessEl    = document.getElementById("mon-sessions");
+    const gqEl      = document.getElementById("mon-gqueue");
+    const warnRow   = document.getElementById("mon-warn-row");
+    const warnMsg   = document.getElementById("mon-warn-msg");
+
+    if (d.status === "ok") {
+      statusEl.textContent = "OK";
+      statusEl.className   = "monitor-badge badge-ok";
+    } else {
+      statusEl.textContent = "ERROR";
+      statusEl.className   = "monitor-badge badge-err";
+    }
+
+    hostEl.textContent = d.redis_url_host || "—";
+
+    const tls  = d.redis_tls ? "TLS" : "Plain";
+    const kind = d.is_external ? "External" : "Local";
+    typeEl.textContent  = `${kind} · ${tls}`;
+    typeEl.className    = "monitor-badge " + (d.is_external ? "badge-warn" : "badge-ok");
+
+    const ms = d.latency_ms ?? -1;
+    latEl.textContent = ms >= 0 ? ms.toFixed(1) + " ms" : "—";
+    // bar: 0ms=0%, 100ms=100%
+    const pct = Math.min(100, Math.max(0, ms));
+    const barColor = ms > 50 ? "var(--bad)" : ms > 15 ? "var(--warn)" : "var(--brand)";
+    barEl.style.width      = pct + "%";
+    barEl.style.background = barColor;
+
+    sessEl.textContent = d.active_sessions ?? "—";
+    gqEl.textContent   = (d.queue_pending_global ?? 0) + " pending / " + (d.queue_processing_global ?? 0) + " processing";
+
+    // Advisories
+    const warnings = [];
+    if (d.latency_critical) warnings.push("Latency critical (>50 ms) — consider upgrading Redis tier");
+    else if (d.latency_warn)  warnings.push("Latency elevated (>15 ms) — external Redis under pressure");
+    if (d.is_external && !d.redis_tls) warnings.push("External Redis without TLS — use rediss:// in production");
+
+    if (warnings.length) {
+      warnRow.style.display = "";
+      warnMsg.textContent   = warnings[0];
+    } else {
+      warnRow.style.display = "none";
+    }
+  } catch(e) {
+    const statusEl = document.getElementById("mon-status");
+    if (statusEl) { statusEl.textContent = "Unreachable"; statusEl.className = "monitor-badge badge-err"; }
+  }
+}
+
+document.getElementById("urls").addEventListener("input", updateUrlCount);
+window.addEventListener("load", async () => {
+  document.getElementById("session-id-display").textContent = SESSION_ID;
+  checkHealth();
+  toggleSourceFields();
+  updateUrlCount();
+  startSSE();
+  startStats();
+  await Promise.all([loadSources(), loadResults()]);
+});
+</script>
+</body>
+</html>

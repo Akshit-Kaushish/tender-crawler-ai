@@ -1,0 +1,38 @@
+services:
+  redis:
+    image: redis:7-alpine
+    profiles: ["local"]
+    expose:
+      - "6379"
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.apiii
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - output_data:/app/output
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.workerrr
+    env_file:
+      - .env
+    volumes:
+      - output_data:/app/output
+
+volumes:
+  redis_data:
+  output_data:
