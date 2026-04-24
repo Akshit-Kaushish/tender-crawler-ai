@@ -129,6 +129,7 @@ storage/
 - Azure Blob Storage
 - OpenAI API access
 - Playwright browser dependencies
+- Docker + Docker Compose v2 (for containerized setup)
 
 ## Environment Variables
 
@@ -168,13 +169,23 @@ playwright install chromium
 ### Docker setup
 
 ```bash
-docker-compose up --build
+docker compose up --build
+```
+
+#### Local Redis (optional)
+
+By default, `docker-compose.yml` does not publish a Redis port on the host, and Redis is started only when you opt into the `local` profile.
+
+Use this when you want `REDIS_URL=redis://redis:6379` inside your `.env`:
+
+```bash
+docker compose --profile local up --build
 ```
 
 To scale workers:
 
 ```bash
-docker-compose up --scale worker=6
+docker compose up --scale worker=6
 ```
 
 ## Running the App
@@ -387,7 +398,7 @@ For better throughput:
 
 - Lower `MAX_DEPTH`.
 - Start from a more specific procurement URL.
-- Tune link scoring rules in [crawler/cleaner.py](/c:/Users/ITCELL/OneDrive/Desktop/tender_ai_scraper/tender_crawler_auth/crawler/cleaner.py).
+- Tune link scoring rules in [crawler/cleaner.py](crawler/cleaner.py).
 
 ### Crawl is too slow
 
@@ -400,7 +411,7 @@ For better throughput:
 
 - Inspect live logs.
 - Check whether the page is actually reachable after login.
-- Test the cleaned page content path in [crawler/ai_extractor.py](/c:/Users/ITCELL/OneDrive/Desktop/tender_ai_scraper/tender_crawler_auth/crawler/ai_extractor.py).
+- Test the cleaned page content path in [crawler/ai_extractor.py](crawler/ai_extractor.py).
 - Review whether the site is serving challenge pages or captchas.
 
 ## Current Limitations
